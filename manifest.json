@@ -1,6 +1,6 @@
 {
   "plugin_id": "neilmc78.request.scryer",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
   "category": "Requests",
@@ -18,8 +18,14 @@
     "license_spdx": "AGPL-3.0-or-later"
   },
   "supported_platforms": [
-    { "os": "linux", "arch": "amd64" },
-    { "os": "linux", "arch": "arm64" }
+    {
+      "os": "linux",
+      "arch": "amd64"
+    },
+    {
+      "os": "linux",
+      "arch": "arm64"
+    }
   ],
   "capabilities": [
     {
@@ -31,8 +37,14 @@
         "reports_download_progress": true,
         "wording": {
           "step": "Scryer",
-          "queued": { "label": "Searching", "detail": "Scryer is looking for a copy." },
-          "downloading": { "label": "Downloading", "detail": "Scryer is downloading it." }
+          "queued": {
+            "label": "Searching",
+            "detail": "Scryer is looking for a copy."
+          },
+          "downloading": {
+            "label": "Downloading",
+            "detail": "Scryer is downloading it."
+          }
         }
       }
     }
