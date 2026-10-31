@@ -1,0 +1,40 @@
+{
+  "plugin_id": "neilmc78.request.scryer",
+  "version": "0.1.0",
+  "checksum": "__CHECKSUM__",
+  "silo_api_version": "v1",
+  "category": "Requests",
+  "presentation": {
+    "display_name": "Scryer Requests",
+    "summary": "Sends approved movie and series requests to Scryer, which searches for them and downloads them.",
+    "description_markdown": "When a request is approved, the plugin adds the title to Scryer as monitored and starts Scryer's automatic search. Scryer picks the release with its own quality profile and hands it to its download client. Silo shows the download's progress on the request, and completes the request once the title reaches the library.\n\nSeries are requested whole; Scryer's monitoring decides which seasons it fetches. Anime requests go to Scryer's anime library.",
+    "setup_markdown": "1. In Scryer, create an API key under your profile's **API keys**.\n2. In Silo, add a request server of type **Scryer** with Scryer's URL (for example `http://scryer:8080`, plus any base path) and the key, and run the connection test.\n3. In Silo's request routing, send movies and series to the Scryer server.",
+    "homepage_url": "https://github.com/neilmc78/silo-plugin-request-scryer",
+    "source_url": "https://github.com/neilmc78/silo-plugin-request-scryer",
+    "support_url": "https://github.com/neilmc78/silo-plugin-request-scryer/issues",
+    "changelog_url": "https://github.com/neilmc78/silo-plugin-request-scryer/releases",
+    "publisher_name": "neilmc78",
+    "publisher_url": "https://github.com/neilmc78",
+    "license_spdx": "AGPL-3.0-or-later"
+  },
+  "supported_platforms": [
+    { "os": "linux", "arch": "amd64" },
+    { "os": "linux", "arch": "arm64" }
+  ],
+  "capabilities": [
+    {
+      "type": "request_router.v1",
+      "id": "scryer",
+      "display_name": "Scryer",
+      "description": "Adds approved requests to Scryer and follows their downloads.",
+      "request_router": {
+        "reports_download_progress": true,
+        "wording": {
+          "step": "Scryer",
+          "queued": { "label": "Searching", "detail": "Scryer is looking for a copy." },
+          "downloading": { "label": "Downloading", "detail": "Scryer is downloading it." }
+        }
+      }
+    }
+  ]
+}
