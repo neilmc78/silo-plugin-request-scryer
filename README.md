@@ -18,7 +18,7 @@ A [Silo](https://github.com/Silo-Server/silo-server) request router that sends a
 
 Silo also completes a request on its own once the title reaches its library.
 
-Series are requested whole; Scryer's monitoring decides which seasons it fetches. Anime series go to Scryer's anime library.
+Series are requested whole and added with all episodes monitored; the plugin sends that explicitly (`options.monitorType: ALL_EPISODES`) instead of relying on what Scryer does when it is left out. Anime series go to Scryer's anime library.
 
 Scryer has no anime movie catalog, so anime movies go to the default movie library unless you pick another one: in the server's settings, choose **Anime movies library** from the list of Scryer movie libraries (for example a second library inside Movies). Nothing is chosen by default. If the library is later deleted, or Scryer cannot be read, the request still goes through, to the default movie library.
 

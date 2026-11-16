@@ -313,3 +313,36 @@ func TestListConfigOptionsIsEmptyWhenLibrariesCannotBeRead(t *testing.T) {
 		t.Fatalf("resp = %v, err = %v", resp, err)
 	}
 }
+
+// A request names the whole series, so the plugin says so instead of leaving
+// the monitoring to whatever Scryer does when the option is missing.
+func TestSeriesAndAnimeAreAddedWithAllEpisodesMonitored(t *testing.T) {
+	for name, d := range map[string]*pluginv1.RequestDescriptor{
+		"series": {MediaType: "series", Title: "24", ExternalIds: map[string]string{"tvdb": "76290"}},
+		"anime":  {MediaType: "series", Title: "Barakamon", IsAnime: true, ExternalIds: map[string]string{"tvdb": "1"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake := &fakeScryer{}
+			r, conn := newTestRouter(t, fake)
+			if _, err := fulfill(t, r, conn, d); err != nil {
+				t.Fatal(err)
+			}
+			opts, _ := fake.added["options"].(map[string]any)
+			if opts["monitorType"] != "ALL_EPISODES" || fake.added["monitored"] != true {
+				t.Fatalf("addTitle input = %v", fake.added)
+			}
+		})
+	}
+}
+
+// A movie keeps sending only monitored: true.
+func TestMoviesSendNoMonitorOptions(t *testing.T) {
+	fake := &fakeScryer{}
+	r, conn := newTestRouter(t, fake)
+	if _, err := fulfill(t, r, conn, &pluginv1.RequestDescriptor{MediaType: "movie", Title: "Alien", ExternalIds: map[string]string{"tmdb": "348"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := fake.added["options"]; ok || fake.added["monitored"] != true {
+		t.Fatalf("movie input = %v", fake.added)
+	}
+}

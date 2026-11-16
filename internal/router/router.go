@@ -130,6 +130,13 @@ func animeMovieLibrary(conn *pluginv1.RouterConnection) string {
 	return strings.TrimSpace(conn.GetConfig().GetFields()[configAnimeMoviesLibrary].GetStringValue())
 }
 
+// seriesMonitorType is sent with every series and anime. A request names the
+// whole series, so everything is monitored. Scryer applies a library's default
+// monitoring in its Add dialog but, as far as tested, not when a title is added
+// through the API, so the plugin states it instead of relying on what Scryer
+// does when the option is left out.
+const seriesMonitorType = "ALL_EPISODES"
+
 func addTitleInput(d *pluginv1.RequestDescriptor) scryer.AddTitle {
 	in := scryer.AddTitle{
 		Name:      d.GetTitle(),
@@ -142,6 +149,7 @@ func addTitleInput(d *pluginv1.RequestDescriptor) scryer.AddTitle {
 		if d.GetIsAnime() {
 			in.Facet = "ANIME"
 		}
+		in.Options = &scryer.TitleOptions{MonitorType: seriesMonitorType}
 	}
 	if y := int(d.GetYear()); y > 0 {
 		in.Year = &y

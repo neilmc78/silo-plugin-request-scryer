@@ -41,15 +41,23 @@ func New(baseURL, apiKey string) *Client {
 
 // AddTitle is the subset of Scryer's AddTitleInput this plugin sends.
 type AddTitle struct {
-	Name      string   `json:"name"`
-	Facet     string   `json:"facet"`               // MOVIE, SERIES or ANIME
-	LibraryID *string  `json:"libraryId,omitempty"` // nil: Scryer picks the facet's default library
-	Monitored bool     `json:"monitored"`
-	Tags      []string `json:"tags"`
-	Year      *int     `json:"year,omitempty"`
-	TmdbID    *int64   `json:"tmdbId,omitempty"`
-	TvdbID    *string  `json:"tvdbId,omitempty"`
-	ImdbID    *string  `json:"imdbId,omitempty"`
+	Name      string        `json:"name"`
+	Facet     string        `json:"facet"`               // MOVIE, SERIES or ANIME
+	LibraryID *string       `json:"libraryId,omitempty"` // nil: Scryer picks the facet's default library
+	Monitored bool          `json:"monitored"`
+	Options   *TitleOptions `json:"options,omitempty"`
+	Tags      []string      `json:"tags"`
+	Year      *int          `json:"year,omitempty"`
+	TmdbID    *int64        `json:"tmdbId,omitempty"`
+	TvdbID    *string       `json:"tvdbId,omitempty"`
+	ImdbID    *string       `json:"imdbId,omitempty"`
+}
+
+// TitleOptions is the subset of Scryer's TitleOptionsInput this plugin sends.
+type TitleOptions struct {
+	// MonitorType is one of Scryer's MonitorTypeValue names. Only sent for
+	// series and anime.
+	MonitorType string `json:"monitorType,omitempty"`
 }
 
 // QueueItem is one download Scryer tracks for a title.
