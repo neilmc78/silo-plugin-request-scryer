@@ -10,6 +10,7 @@ import (
 	"time"
 
 	pluginv1 "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginproto/silo/plugin/v1"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // fakeScryer answers the plugin's GraphQL operations and records the last
@@ -20,6 +21,8 @@ type fakeScryer struct {
 	searches int
 	addError string
 	title    map[string]any // nil: the title is gone
+	libs     []map[string]any
+	libsErr  string // makes the libraries query fail
 }
 
 func (f *fakeScryer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +50,12 @@ func (f *fakeScryer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		f.added = body.Variables["input"].(map[string]any)
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"addTitle": map[string]any{"title": map[string]any{"id": "t1"}}}})
+	case strings.Contains(body.Query, "libraries("):
+		if f.libsErr != "" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"errors": []map[string]string{{"message": f.libsErr}}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"libraries": f.libs}})
 	case strings.Contains(body.Query, "triggerAcquisitionSearch"):
 		f.searches++
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"triggerAcquisitionSearch": map[string]any{"id": "job"}}})
@@ -183,5 +192,124 @@ func TestTestConnectionReportsARefusedKey(t *testing.T) {
 	bad, _ := r.TestConnection(context.Background(), &pluginv1.TestConnectionRequest{Connection: conn})
 	if !ok.GetOk() || bad.GetOk() {
 		t.Fatalf("good key ok=%v, bad key ok=%v", ok.GetOk(), bad.GetOk())
+	}
+}
+
+func withConfig(t *testing.T, conn *pluginv1.RouterConnection, cfg map[string]any) {
+	t.Helper()
+	st, err := structpb.NewStruct(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Config = st
+}
+
+func animeMovie() *pluginv1.RequestDescriptor {
+	return &pluginv1.RequestDescriptor{MediaType: "movie", Title: "Your Name", IsAnime: true, ExternalIds: map[string]string{"tmdb": "372058"}}
+}
+
+func fulfill(t *testing.T, r *Router, conn *pluginv1.RouterConnection, d *pluginv1.RequestDescriptor) (*pluginv1.FulfillResponse, error) {
+	t.Helper()
+	return r.Fulfill(context.Background(), &pluginv1.FulfillRequest{
+		Request:     d,
+		Qualities:   []*pluginv1.RequestedQuality{{Id: "1080p"}},
+		Connections: []*pluginv1.RouterConnection{conn},
+	})
+}
+
+func TestAnimeMovieGoesToTheChosenLibrary(t *testing.T) {
+	libs := []map[string]any{{"id": "lib-movies", "name": "Movies"}, {"id": "lib-anime", "name": "Anime Movies"}}
+	for _, tc := range []struct{ name, choice string }{
+		{"by id", "lib-anime"},
+		{"by name, case-insensitive", " anime movies "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &fakeScryer{libs: libs}
+			r, conn := newTestRouter(t, fake)
+			withConfig(t, conn, map[string]any{configAnimeMoviesLibrary: tc.choice})
+			if _, err := fulfill(t, r, conn, animeMovie()); err != nil {
+				t.Fatal(err)
+			}
+			if fake.added["facet"] != "MOVIE" || fake.added["libraryId"] != "lib-anime" {
+				t.Fatalf("addTitle input = %v", fake.added)
+			}
+		})
+	}
+}
+
+func TestLibraryOnlyAppliesToAnimeMovies(t *testing.T) {
+	cfg := map[string]any{configAnimeMoviesLibrary: "lib-anime"}
+	for name, d := range map[string]*pluginv1.RequestDescriptor{
+		"plain movie":  {MediaType: "movie", Title: "Alien", ExternalIds: map[string]string{"tmdb": "348"}},
+		"anime series": {MediaType: "series", Title: "Sailor Moon", IsAnime: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake := &fakeScryer{libs: []map[string]any{{"id": "lib-anime", "name": "Anime Movies"}}}
+			r, conn := newTestRouter(t, fake)
+			withConfig(t, conn, cfg)
+			if _, err := fulfill(t, r, conn, d); err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := fake.added["libraryId"]; ok {
+				t.Fatalf("libraryId sent for %s: %v", name, fake.added)
+			}
+		})
+	}
+}
+
+func TestAnimeMovieWithoutAChosenLibraryUsesTheDefault(t *testing.T) {
+	fake := &fakeScryer{}
+	r, conn := newTestRouter(t, fake)
+	if _, err := fulfill(t, r, conn, animeMovie()); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := fake.added["libraryId"]; ok {
+		t.Fatalf("libraryId sent without a choice: %v", fake.added)
+	}
+}
+
+// A deleted or renamed library, or a Scryer that cannot list libraries, must
+// not stop the request: the title goes to the default movie library.
+func TestAnimeMovieFallsBackToTheDefaultLibrary(t *testing.T) {
+	for name, fake := range map[string]*fakeScryer{
+		"library gone":         {libs: []map[string]any{{"id": "lib-movies", "name": "Movies"}}},
+		"libraries unreadable": {libsErr: "permission denied"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r, conn := newTestRouter(t, fake)
+			withConfig(t, conn, map[string]any{configAnimeMoviesLibrary: "lib-anime"})
+			resp, err := fulfill(t, r, conn, animeMovie())
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := resp.GetTargets()
+			if len(got) != 1 || got[0].GetStatus() != statusQueued || !strings.Contains(got[0].GetMessage(), "default movie library") {
+				t.Fatalf("targets = %v", got)
+			}
+			if _, ok := fake.added["libraryId"]; ok {
+				t.Fatalf("libraryId sent for a library that could not be used: %v", fake.added)
+			}
+		})
+	}
+}
+
+func TestListConfigOptionsOffersMovieLibraries(t *testing.T) {
+	fake := &fakeScryer{libs: []map[string]any{{"id": "a", "name": "Movies"}, {"id": "b", "name": "Anime Movies"}}}
+	r, conn := newTestRouter(t, fake)
+	resp, err := r.ListConfigOptions(context.Background(), &pluginv1.ListConfigOptionsRequest{Connection: conn})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := resp.GetOptionsByField()[configAnimeMoviesLibrary].GetOptions()
+	if len(opts) != 2 || opts[1].GetValue() != "b" || opts[1].GetLabel() != "Anime Movies" {
+		t.Fatalf("options = %v", opts)
+	}
+}
+
+func TestListConfigOptionsIsEmptyWhenLibrariesCannotBeRead(t *testing.T) {
+	r, conn := newTestRouter(t, &fakeScryer{libsErr: "permission denied"})
+	resp, err := r.ListConfigOptions(context.Background(), &pluginv1.ListConfigOptionsRequest{Connection: conn})
+	if err != nil || len(resp.GetOptionsByField()) != 0 {
+		t.Fatalf("resp = %v, err = %v", resp, err)
 	}
 }

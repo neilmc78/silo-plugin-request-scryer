@@ -18,8 +18,14 @@
     "license_spdx": "AGPL-3.0-or-later"
   },
   "supported_platforms": [
-    { "os": "linux", "arch": "amd64" },
-    { "os": "linux", "arch": "arm64" }
+    {
+      "os": "linux",
+      "arch": "amd64"
+    },
+    {
+      "os": "linux",
+      "arch": "arm64"
+    }
   ],
   "capabilities": [
     {
@@ -27,12 +33,36 @@
       "id": "scryer",
       "display_name": "Scryer",
       "description": "Adds approved requests to Scryer and follows their downloads.",
+      "config_schema": [
+        {
+          "key": "connection",
+          "title": "Scryer server",
+          "json_schema": "{\"type\":\"object\",\"properties\":{\"anime_movies_library\":{\"type\":\"string\"}}}",
+          "admin_form": {
+            "fields": [
+              {
+                "key": "anime_movies_library",
+                "label": "Anime movies library",
+                "description": "Scryer movie library that receives anime movies, for example a second library inside Movies. Leave empty to use Scryer's default movie library. If the library is later deleted, anime movies go to the default movie library again.",
+                "control": "ADMIN_FORM_CONTROL_SELECT",
+                "dynamic_options": true
+              }
+            ]
+          }
+        }
+      ],
       "request_router": {
         "reports_download_progress": true,
         "wording": {
           "step": "Scryer",
-          "queued": { "label": "Searching", "detail": "Scryer is looking for a copy." },
-          "downloading": { "label": "Downloading", "detail": "Scryer is downloading it." }
+          "queued": {
+            "label": "Searching",
+            "detail": "Scryer is looking for a copy."
+          },
+          "downloading": {
+            "label": "Downloading",
+            "detail": "Scryer is downloading it."
+          }
         }
       }
     }

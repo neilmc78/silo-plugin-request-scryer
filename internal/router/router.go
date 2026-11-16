@@ -78,8 +78,20 @@ func (r *Router) Fulfill(ctx context.Context, req *pluginv1.FulfillRequest) (*pl
 		}
 	}
 
-	titleID, err := client.AddTitle(ctx, addTitleInput(req.GetRequest()))
+	input := addTitleInput(req.GetRequest())
 	var gqlErr *scryer.GraphQLError
+	var libraryNote string
+	if choice := animeMovieLibrary(conn); choice != "" && isAnimeMovie(req.GetRequest()) {
+		if id, err := client.LibraryID(ctx, "MOVIE", choice); err == nil {
+			input.LibraryID = &id
+		} else {
+			// The library was deleted or renamed, or Scryer could not be read.
+			// The request still goes through, to the default movie library.
+			libraryNote = " The chosen anime movies library could not be used; the title went to the default movie library."
+		}
+	}
+
+	titleID, err := client.AddTitle(ctx, input)
 	switch {
 	case errors.As(err, &gqlErr):
 		for _, q := range qualities {
@@ -95,10 +107,27 @@ func (r *Router) Fulfill(ctx context.Context, req *pluginv1.FulfillRequest) (*pl
 		// The title is monitored, so Scryer's RSS sync still finds it.
 		message = "Added to Scryer, but the search did not start; Scryer will pick it up from its RSS sync."
 	}
+	message += libraryNote
 	for _, q := range qualities {
 		resp.Targets = append(resp.Targets, target(q, titleID, statusQueued, message))
 	}
 	return resp, nil
+}
+
+// configAnimeMoviesLibrary is the connection config key of the dropdown that
+// picks the Scryer movie library for anime movies. Its value is the library's
+// id, so renaming the library in Scryer does not break the choice. Empty means
+// the default movie library, which is what the plugin always used.
+const configAnimeMoviesLibrary = "anime_movies_library"
+
+func isAnimeMovie(d *pluginv1.RequestDescriptor) bool {
+	return d.GetMediaType() == "movie" && d.GetIsAnime()
+}
+
+// animeMovieLibrary returns the chosen library for anime movies, or "" when
+// none is chosen (anime movies then go to Scryer's default movie library).
+func animeMovieLibrary(conn *pluginv1.RouterConnection) string {
+	return strings.TrimSpace(conn.GetConfig().GetFields()[configAnimeMoviesLibrary].GetStringValue())
 }
 
 func addTitleInput(d *pluginv1.RequestDescriptor) scryer.AddTitle {
@@ -264,12 +293,26 @@ func (r *Router) TestConnection(ctx context.Context, req *pluginv1.TestConnectio
 	}
 }
 
-// ListConfigOptions has nothing to offer: the server needs only its URL and key.
-func (r *Router) ListConfigOptions(context.Context, *pluginv1.ListConfigOptionsRequest) (*pluginv1.ListConfigOptionsResponse, error) {
-	return &pluginv1.ListConfigOptionsResponse{}, nil
+// ListConfigOptions offers Scryer's movie libraries for the anime movies
+// dropdown. When Scryer cannot be read (bad key, no permission, unreachable)
+// it offers nothing and anime movies keep going to the default library.
+func (r *Router) ListConfigOptions(ctx context.Context, req *pluginv1.ListConfigOptionsRequest) (*pluginv1.ListConfigOptionsResponse, error) {
+	resp := &pluginv1.ListConfigOptionsResponse{}
+	libs, err := r.newClient(req.GetConnection()).Libraries(ctx, "MOVIE")
+	if err != nil {
+		return resp, nil
+	}
+	list := &pluginv1.ConfigOptionList{}
+	for _, l := range libs {
+		list.Options = append(list.Options, &pluginv1.ConfigOption{Value: l.ID, Label: l.Name})
+	}
+	resp.OptionsByField = map[string]*pluginv1.ConfigOptionList{configAnimeMoviesLibrary: list}
+	return resp, nil
 }
 
-// Validate accepts every server: there are no settings to check.
+// Validate accepts every server: the only setting is a dropdown of libraries
+// that exist in Scryer, and a library that has gone is handled when a request
+// is fulfilled.
 func (r *Router) Validate(context.Context, *pluginv1.ValidateRequest) (*pluginv1.ValidateResponse, error) {
 	return &pluginv1.ValidateResponse{}, nil
 }
