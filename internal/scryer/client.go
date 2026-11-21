@@ -342,6 +342,39 @@ func (c *Client) Title(ctx context.Context, id string) (*Title, error) {
 	return out.Title, nil
 }
 
+// MissingMonitoredEpisodes counts the monitored episodes without a file in the
+// given seasons of a title. The collection counts cannot say it: the episodes
+// already owned are not monitored when a request leaves them alone, so "owned"
+// and "monitored" are two different sets.
+func (c *Client) MissingMonitoredEpisodes(ctx context.Context, titleID string, seasons []int32) (int, error) {
+	var out struct {
+		Title *struct {
+			Collections []Collection `json:"collections"`
+		} `json:"title"`
+	}
+	const q = `query SiloMissing($id: ID!) { title(id: $id) { collections { collectionType collectionIndex episodes { monitored mediaFiles { id } } } } }`
+	if err := c.do(ctx, q, map[string]any{"id": titleID}, &out); err != nil {
+		return 0, err
+	}
+	if out.Title == nil {
+		return 0, fmt.Errorf("%w: the title is gone", ErrSeasonNotFound)
+	}
+	missing := 0
+	for _, col := range out.Title.Collections {
+		for _, n := range seasons {
+			if col.Index != strconv.Itoa(int(n)) {
+				continue
+			}
+			for _, e := range col.Episodes {
+				if e.Monitored && len(e.MediaFiles) == 0 {
+					missing++
+				}
+			}
+		}
+	}
+	return missing, nil
+}
+
 // ErrSeasonNotFound means the title has no season with the requested number.
 var ErrSeasonNotFound = errors.New("scryer has no such season")
 

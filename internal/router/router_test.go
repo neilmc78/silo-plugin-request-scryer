@@ -1368,3 +1368,55 @@ func TestSeasonWaitsShareOneBudget(t *testing.T) {
 		t.Fatalf("took %v: the waits did not share the budget", took)
 	}
 }
+
+// seasonOf builds a season from a string, one letter per episode: "o" is owned
+// and not monitored (a request leaves it alone), "M" is monitored with its file,
+// "m" is monitored and still missing.
+func seasonOf(index, episodes string) map[string]any {
+	eps := []any{}
+	owned, monitored := 0, 0
+	for i, ch := range episodes {
+		files := []any{}
+		if ch == 'o' || ch == 'M' {
+			files = append(files, map[string]any{"id": "f"})
+			owned++
+		}
+		if ch == 'M' || ch == 'm' {
+			monitored++
+		}
+		eps = append(eps, map[string]any{"id": fmt.Sprintf("s%se%d", index, i+1), "monitored": ch == 'M' || ch == 'm', "mediaFiles": files})
+	}
+	return map[string]any{"id": "s" + index, "collectionType": "SEASON", "collectionIndex": index, "monitored": true,
+		"episodesOwned": owned, "episodesMonitored": monitored, "episodesTotal": len(episodes), "episodes": eps}
+}
+
+// A request leaves the episodes Scryer already owns unmonitored, so "owned" and
+// "monitored" in the collection counts are different sets: a season with more
+// owned episodes than monitored ones is not done while a monitored one is missing.
+func TestSeasonIsDoneWhenEveryMonitoredEpisodeHasAFile(t *testing.T) {
+	for name, tc := range map[string]struct {
+		episodes string
+		want     string
+	}{
+		"owned ones outnumber the missing monitored ones": {"ooooooommmmm", statusQueued},
+		"some of the monitored ones downloaded":           {"oooooMMmmmm", statusQueued},
+		"every monitored one downloaded":                  {"oooMMMMM", statusCompleted},
+		"nothing owned yet":                               {"mmmm", statusQueued},
+		"a monitored episode still to air":                {"MMMm", statusQueued},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r, conn := newTestRouter(t, &fakeScryer{title: seasonTitle(seasonOf("1", tc.episodes))})
+			resp, err := r.CheckStatus(context.Background(), &pluginv1.CheckStatusRequest{
+				Request:     seasonRequest(1),
+				Targets:     []*pluginv1.TargetRef{{Quality: "1080p", ConnectionId: "c1", ExternalId: "t1"}},
+				Connections: []*pluginv1.RouterConnection{conn},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := resp.GetStatuses()[0].GetStatus(); got != tc.want {
+				t.Fatalf("status = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
