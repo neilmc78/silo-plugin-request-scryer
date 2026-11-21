@@ -580,15 +580,27 @@ func (r *Router) CheckStatus(ctx context.Context, req *pluginv1.CheckStatusReque
 				}
 			}
 		}
-		r.describe(st, title, seasons)
+		// A season with a file may still have monitored episodes to come, so when
+		// every requested season has some file the episodes are counted.
+		complete := false
+		if len(seasons) > 0 && title != nil && progressOf(title.Queue, r.now()) == nil && seasonsHaveFiles(title, seasons) {
+			missing, err := r.newClient(conn).MissingMonitoredEpisodes(ctx, t.GetExternalId(), seasons)
+			if err != nil {
+				// Silo keeps the target as it is and asks again next pass.
+				return nil, err
+			}
+			complete = missing == 0
+		}
+		r.describe(st, title, seasons, complete)
 		resp.Statuses = append(resp.Statuses, st)
 	}
 	return resp, nil
 }
 
-// seasonsHaveFiles reports whether every requested season Scryer has got a file
-// for each of its monitored episodes. A season Scryer does not have (yet) is left out, as the
-// request leaves it out; with none of them in Scryer there is nothing to wait for.
+// seasonsHaveFiles reports whether every requested season Scryer has got at
+// least one file. A season Scryer does not have (yet) is left out, as the request
+// leaves it out; with none of them in Scryer there is nothing to wait for. It is
+// only the first test of a season being done: see MissingMonitoredEpisodes.
 func seasonsHaveFiles(title *scryer.Title, seasons []int32) bool {
 	found := false
 	for _, n := range seasons {
@@ -597,27 +609,23 @@ func seasonsHaveFiles(title *scryer.Title, seasons []int32) bool {
 			continue
 		}
 		found = true
-		// Done when every monitored episode has a file: one file of a ten-episode
-		// season is not the season. A season with nothing owned is never done.
-		col := title.Collections[i]
-		if col.EpisodesOwned == nil || *col.EpisodesOwned == 0 {
-			return false
-		}
-		if col.EpisodesMonitored != nil && *col.EpisodesOwned < *col.EpisodesMonitored {
+		if col := title.Collections[i]; col.EpisodesOwned == nil || *col.EpisodesOwned == 0 {
 			return false
 		}
 	}
 	return found
 }
 
-func (r *Router) describe(st *pluginv1.TargetStatus, title *scryer.Title, seasons []int32) {
+// describe sets a target's status from its Scryer title. complete is whether the
+// requested seasons are done: every monitored episode in them has a file.
+func (r *Router) describe(st *pluginv1.TargetStatus, title *scryer.Title, seasons []int32, complete bool) {
 	switch {
 	case title == nil:
 		st.Status, st.Message = statusFailed, "The title was removed from Scryer."
 	case progressOf(title.Queue, r.now()) != nil:
 		st.Status = statusDownloading
 		st.Progress = progressOf(title.Queue, r.now())
-	case len(seasons) > 0 && seasonsHaveFiles(title, seasons):
+	case len(seasons) > 0 && complete:
 		st.Status = statusCompleted
 	case len(seasons) == 0 && len(title.MediaFiles) > 0:
 		st.Status = statusCompleted
